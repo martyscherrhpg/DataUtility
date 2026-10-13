@@ -1,0 +1,6 @@
+.env
+api/local.settings.json
+deploy-token.txt
+node_modules/
+tools/
+deploy-token-hpg.txt

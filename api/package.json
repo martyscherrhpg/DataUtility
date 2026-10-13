@@ -1,0 +1,10 @@
+{
+  "name": "internal-grid-api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "@azure/functions": "^4.16.5",
+    "mssql": "^12.7.2"
+  }
+}

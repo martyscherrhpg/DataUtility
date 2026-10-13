@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Reps</title>
+
+  <!-- Tabulator: the spreadsheet-style grid. Loaded from a CDN, no install needed. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.3.1/css/tabulator_simple.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.3.1/js/tabulator.min.js"></script>
+
+  <style>
+    /* Simple internal-tool look. Colours are defined once here at the top. */
+    :root {
+      --text: #1f2933;
+      --muted: #6b7785;
+      --line: #d9dee4;
+      --background: #f5f7f9;
+      --panel: #ffffff;
+      --accent: #2563eb;
+      --ok: #dcfce7;
+      --ok-text: #166534;
+      --error: #fee2e2;
+      --error-text: #991b1b;
+    }
+
+    * { box-sizing: border-box; }
+
+    /* Anything marked hidden stays hidden, even if a rule below says display:flex. */
+    [hidden] { display: none !important; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--background);
+    }
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #login-form {
+      margin: 10vh auto 0;
+      width: 100%;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    #login-error { margin: 0; min-height: 1.4em; color: var(--error-text); font-weight: 600; }
+
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    h1 { margin: 0; font-size: 20px; font-weight: 600; }
+
+    #search { flex: 1; min-width: 200px; max-width: 420px; }
+
+
+    input, button { font: inherit; }
+
+    input {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+    }
+
+    input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+
+    button {
+      padding: 6px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: 0.6; cursor: wait; }
+
+    #add-form {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    #add-form input { flex: 1; min-width: 140px; }
+
+    #github-upload { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+    #github-upload summary { cursor: pointer; font-weight: 600; }
+    #github-upload-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    #github-upload-form input[type="file"] { flex: 1; min-width: 220px; }
+    #upload-selection { color: var(--muted); }
+
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    #pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+    #page-controls { display: flex; align-items: center; gap: 8px; }
+    #page-size { padding: 6px; border: 1px solid var(--line); border-radius: 6px; }
+    .row-actions { display: flex; justify-content: center; gap: 6px; }
+    .row-actions button { padding: 4px 9px; }
+    .row-actions .delete-row { background: #b42318; }
+    dialog { width: min(620px, calc(100% - 32px)); border: 1px solid var(--line); border-radius: 10px; padding: 20px; box-shadow: 0 20px 60px #0003; }
+    dialog::backdrop { background: #17212b66; }
+    #edit-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #edit-form label { display: grid; gap: 5px; }
+    #edit-form input { width: 100%; }
+    #edit-form .dialog-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+    /* Fixed height on purpose: if a message changed the page layout, the grid
+       would redraw and close the cell someone is typing in. Long messages are
+       cut off with "…"; hover to read them in full. */
+    #status {
+      height: 26px;
+      line-height: 22px;
+      padding: 2px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #status.working { color: var(--muted); }
+    #status.ok { color: var(--ok-text); background: var(--ok); }
+    #status.error { color: var(--error-text); background: var(--error); font-weight: 600; }
+
+    #grid {
+      flex: 1;
+      min-height: 300px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    /* Read-only cells (like ID) look quieter than editable ones. */
+    .tabulator .tabulator-cell.readonly { color: var(--muted); }
+    .tabulator .tabulator-cell.editable { cursor: text; }
+    .tabulator .tabulator-cell.editable:hover { background: #eef4ff; }
+
+    /* Green / red flash after a save. */
+    .flash-ok { animation: flash-ok 1.2s ease-out; }
+    .flash-error { animation: flash-error 2s ease-out; }
+    @keyframes flash-ok { from { background: #86efac; } to { background: transparent; } }
+    @keyframes flash-error { from { background: #fca5a5; } to { background: transparent; } }
+
+  </style>
+</head>
+<body>
+  <!-- Shown when the password is needed. -->
+  <form id="login-form" autocomplete="on" hidden>
+    <h1>Customer Reps</h1>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Open</button>
+    <p id="login-error" role="alert"></p>
+  </form>
+
+  <!-- The app itself. Shown once the data loads. -->
+  <main id="app" hidden>
+    <header>
+      <h1>Customer Reps</h1>
+      <input id="search" type="search" placeholder="Search…  (press / )" autocomplete="off">
+    </header>
+
+    <div class="toolbar">
+    <form id="add-form" autocomplete="off">
+      <!-- One box per editable column is added here by the script below -->
+      <button type="submit">Add row</button>
+    </form>
+    </div>
+    <small>Use the row actions to edit or delete records. New rows receive an ID automatically.</small>
+
+    <details id="github-upload">
+      <summary>Send code files to GitHub</summary>
+      <form id="github-upload-form">
+        <input id="github-files" name="files" type="file" multiple required aria-label="Choose code files">
+        <span id="upload-selection">Files are committed under incoming/ on the repository's default branch.</span>
+        <button type="submit">Upload files</button>
+      </form>
+    </details>
+
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <div id="grid"></div>
+    <footer id="pagination">
+      <span id="page-summary">Loading records…</span>
+      <div id="page-controls">
+        <label for="page-size">Rows per page</label>
+        <select id="page-size"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
+        <button id="first-page" type="button" aria-label="First page">«</button>
+        <button id="prev-page" type="button">Previous</button>
+        <span id="page-label">Page 1 of 1</span>
+        <button id="next-page" type="button">Next</button>
+        <button id="last-page" type="button" aria-label="Last page">»</button>
+      </div>
+    </footer>
+  </main>
+
+  <dialog id="edit-dialog">
+    <h2>Edit row</h2>
+    <form id="edit-form">
+      <div class="dialog-actions">
+        <button id="cancel-edit" type="button" style="background:#6b7785">Cancel</button>
+        <button type="submit">Save changes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    // =============================================================================
+    // The page's behaviour: grid, saving, adding, searching, password box.
+    //
+    // The page never talks to the database. It only calls our own API:
+    //   GET /api/rows?page=...&size=..., GET /api/search?q=...&page=...&size=...
+    //   POST /api/update, POST /api/add, POST /api/delete
+    //
+    // Which columns appear (and which are editable) is decided by api/index.js.
+    // The API sends that list along with the rows, so normally nothing here
+    // needs to change when columns change.
+    // =============================================================================
+
+    let table = null;   // the Tabulator grid
+
+    const searchBox = document.getElementById('search');
+    const addForm = document.getElementById('add-form');
+    const statusBox = document.getElementById('status');
+    const githubUploadForm = document.getElementById('github-upload-form');
+    const githubFilesInput = document.getElementById('github-files');
+    const uploadSelection = document.getElementById('upload-selection');
+    const pageSizeBox = document.getElementById('page-size');
+    const editDialog = document.getElementById('edit-dialog');
+    const editForm = document.getElementById('edit-form');
+    let currentPage = 1;
+    let totalPages = 1;
+    let activeEditRow = null;
+    let columnsMetadata = [];
+
+    // ---- password ---------------------------------------------------------------
+    // The shared password is remembered in this browser, so people type it once.
+    // (Browser storage can be blocked, e.g. private windows; then it just asks
+    // again next visit.)
+
+    const PASSWORD_KEY = 'app-password';
+
+    function savedPassword() {
+      try { return localStorage.getItem(PASSWORD_KEY) || ''; } catch { return ''; }
+    }
+
+    function savePassword(password) {
+      try {
+        if (password) localStorage.setItem(PASSWORD_KEY, password);
+        else localStorage.removeItem(PASSWORD_KEY);
+      } catch { /* storage blocked: fine */ }
+    }
+
+    let currentPassword = savedPassword();
+
+    function showLogin(message) {
+      document.getElementById('app').hidden = true;
+      document.getElementById('login-form').hidden = false;
+      document.getElementById('login-error').textContent = message || '';
+      document.getElementById('password').focus();
+    }
+
+    document.getElementById('login-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      currentPassword = document.getElementById('password').value;
+      document.getElementById('login-error').textContent = 'Checking…';
+      start();
+    });
+
+    // ---- talking to the API -----------------------------------------------------
+
+    // Calls the API and returns its JSON. Throws an Error with a readable
+    // message if anything goes wrong.
+    async function api(path, body) {
+      const options = { headers: { 'x-app-password': currentPassword } };
+      if (body !== undefined) {
+        options.method = 'POST';
+        if (body instanceof FormData) {
+          options.body = body;
+        } else {
+          options.headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(body);
+        }
+      }
+
+      let response;
+      try {
+        response = await fetch('/api/' + path, options);
+      } catch {
+        throw new Error('Could not reach the server. Check your connection.');
+      }
+      const data = await response.json().catch(() => ({}));
+      if (data.needPassword) {
+        savePassword('');
+        showLogin(currentPassword ? 'Wrong password. Try again.' : '');
+        throw new Error('Password needed.');
+      }
+      if (!response.ok) {
+        throw new Error(data.error || `Server error (${response.status}).`);
+      }
+      return data;
+    }
+
+    // ---- status message ---------------------------------------------------------
+
+    let statusTimer = null;
+
+    // kind: 'working', 'ok' or 'error'. Errors stay until the next action.
+    function showStatus(message, kind) {
+      clearTimeout(statusTimer);
+      statusBox.textContent = message;
+      statusBox.title = message;
+      statusBox.className = kind;
+      if (kind === 'ok') {
+        statusTimer = setTimeout(() => { statusBox.textContent = ''; statusBox.className = ''; }, 3000);
+      }
+    }
+
+    // Briefly colours an element green (saved) or red (failed).
+    function flash(element, kind) {
+      if (!element) return;
+      element.classList.remove('flash-ok', 'flash-error');
+      void element.offsetWidth; // restart the animation
+      element.classList.add(kind === 'ok' ? 'flash-ok' : 'flash-error');
+    }
+
+    // ---- building the page ------------------------------------------------------
+
+    function buildGrid(data) {
+      table = new Tabulator('#grid', {
+        data: data.rows,
+        index: 'id',
+        layout: 'fitColumns',
+        height: '100%',
+        placeholder: 'No rows found',
+        columns: [...data.columns.map((c) => ({
+          title: c.title,
+          field: c.field,
+          editor: false,
+          cssClass: 'readonly',
+          minWidth: 90,
+        })), {
+          title: 'Actions',
+          field: '_actions',
+          headerSort: false,
+          hozAlign: 'center',
+          width: 160,
+          formatter: () => '<div class="row-actions"><button type="button" class="edit-row">Edit</button><button type="button" class="delete-row">Delete</button></div>',
+        }],
+      });
+
+      table.on('cellClick', rowAction);
+    }
+
+    async function rowAction(event, cell) {
+      if (cell.getField() !== '_actions' || !cell.getRow().getData().can_edit) return;
+      const row = cell.getRow();
+      if (event.target.closest('.edit-row')) {
+        openEdit(row);
+        return;
+      }
+      if (!event.target.closest('.delete-row')) return;
+      const original = row.getData();
+      const internalId = original.id;
+      if (!window.confirm(`Delete row ${internalId}? This cannot be undone.`)) return;
+
+      const button = cell.getElement().querySelector('.delete-row');
+      if (button) button.disabled = true;
+      showStatus(`Deleting row ${internalId}…`, 'working');
+      try {
+        await api('delete', { id: original.id });
+        await runSearch(currentPage);
+        showStatus(`Deleted row ${internalId}.`, 'ok');
+      } catch (err) {
+        if (button) button.disabled = false;
+        showStatus(`Not deleted: ${err.message}`, 'error');
+      }
+    }
+
+    function openEdit(row) {
+      activeEditRow = row;
+      editForm.querySelectorAll('label').forEach((label) => label.remove());
+      const actions = editForm.querySelector('.dialog-actions');
+      columnsMetadata.filter((c) => c.editable).forEach((c) => {
+        const label = document.createElement('label');
+        label.textContent = c.title;
+        const input = document.createElement('input');
+        input.name = c.field;
+        input.maxLength = 100;
+        input.value = row.getData()[c.field] ?? '';
+        label.append(input);
+        editForm.insertBefore(label, actions);
+      });
+      editDialog.querySelector('h2').textContent = `Edit row ${row.getData().id}`;
+      editDialog.showModal();
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', () => editDialog.close());
+    editForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!activeEditRow) return;
+      const row = activeEditRow;
+      const original = row.getData();
+      const values = Object.fromEntries(new FormData(editForm));
+      const button = editForm.querySelector('[type="submit"]');
+      button.disabled = true;
+      showStatus('Saving row…', 'working');
+      try {
+        await api('update', { id: original.id, values });
+        editDialog.close();
+        await runSearch(currentPage);
+        showStatus(`Saved row ${original.id}.`, 'ok');
+      } catch (err) { showStatus(`Not saved: ${err.message}`, 'error'); }
+      finally { button.disabled = false; }
+    });
+
+    function buildAddForm(columns) {
+      const addableColumns = columns.filter((c) => c.addable);
+      if (!addableColumns.length) {
+        addForm.hidden = true;
+        return;
+      }
+
+      const button = addForm.querySelector('button');
+      for (const c of addableColumns) {
+        const input = document.createElement('input');
+        input.name = c.field;
+        input.placeholder = c.title;
+        input.maxLength = 100;
+        input.setAttribute('aria-label', c.title);
+        addForm.insertBefore(input, button);
+      }
+    }
+
+    // ---- adding a row -----------------------------------------------------------
+
+    addForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fields = Object.fromEntries(new FormData(addForm));
+      const button = addForm.querySelector('button');
+
+      button.disabled = true;
+      showStatus('Adding row…', 'working');
+      try {
+        await api('add', fields);
+        searchBox.value = '';
+        await runSearch();
+        addForm.reset();
+        addForm.querySelector('input').focus();
+        showStatus('Row added.', 'ok');
+      } catch (err) {
+        showStatus(`Not added: ${err.message}`, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    githubFilesInput.addEventListener('change', () => {
+      const count = githubFilesInput.files.length;
+      uploadSelection.textContent = count ? `${count} file${count === 1 ? '' : 's'} selected.` : 'Files are committed under incoming/ on the repository\'s default branch.';
+    });
+
+    githubUploadForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const files = Array.from(githubFilesInput.files);
+      if (!files.length) return;
+      const formData = new FormData();
+      for (const file of files) formData.append('files', file, file.name);
+
+      const button = githubUploadForm.querySelector('[type="submit"]');
+      button.disabled = true;
+      showStatus('Uploading files to GitHub…', 'working');
+      try {
+        const result = await api('upload', formData);
+        githubUploadForm.reset();
+        uploadSelection.textContent = 'Files are committed under incoming/ on the repository\'s default branch.';
+        showStatus(`Uploaded ${result.count} file${result.count === 1 ? '' : 's'} to ${result.directory}.`, 'ok');
+      } catch (err) {
+        showStatus(`Upload failed: ${err.message}`, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // ---- searching --------------------------------------------------------------
+
+    let searchTimer = null;
+    let searchNumber = 0; // ignores slow answers to older searches
+
+    searchBox.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(runSearch, 300);
+    });
+
+    async function runSearch(page = 1) {
+      const q = searchBox.value.trim();
+      const mine = ++searchNumber;
+      currentPage = page;
+      showStatus('Searching…', 'working');
+      try {
+        const size = Number(pageSizeBox.value);
+        const data = await api(q ? `search?q=${encodeURIComponent(q)}&page=${page}&size=${size}` : `rows?page=${page}&size=${size}`);
+        if (mine !== searchNumber) return;
+        totalPages = Math.max(1, Math.ceil(data.total / data.pageSize));
+        if (data.page > totalPages) return runSearch(totalPages);
+        table.replaceData(data.rows);
+        currentPage = Math.min(data.page, totalPages);
+        document.getElementById('page-summary').textContent = `${data.total.toLocaleString()} records · showing ${data.total ? ((currentPage - 1) * data.pageSize + 1).toLocaleString() : 0}–${Math.min(currentPage * data.pageSize, data.total).toLocaleString()}`;
+        document.getElementById('page-label').textContent = `Page ${currentPage} of ${totalPages}`;
+        document.getElementById('first-page').disabled = document.getElementById('prev-page').disabled = currentPage <= 1;
+        document.getElementById('last-page').disabled = document.getElementById('next-page').disabled = currentPage >= totalPages;
+        showStatus(`${data.total.toLocaleString()} record${data.total === 1 ? '' : 's'} found.`, 'ok');
+      } catch (err) {
+        if (mine === searchNumber) showStatus(`Search failed: ${err.message}`, 'error');
+      }
+    }
+
+    document.getElementById('first-page').addEventListener('click', () => runSearch(1));
+    document.getElementById('prev-page').addEventListener('click', () => runSearch(currentPage - 1));
+    document.getElementById('next-page').addEventListener('click', () => runSearch(currentPage + 1));
+    document.getElementById('last-page').addEventListener('click', () => runSearch(totalPages));
+    pageSizeBox.addEventListener('change', () => runSearch(1));
+
+    // Press "/" anywhere (except while typing) to jump to the search box.
+    document.addEventListener('keydown', (event) => {
+      const typing = ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName);
+      if (event.key === '/' && !typing) {
+        event.preventDefault();
+        searchBox.focus();
+        searchBox.select();
+      }
+    });
+
+    // ---- start ------------------------------------------------------------------
+
+    async function start() {
+      showStatus('Loading…', 'working');
+      let data;
+      try {
+        data = await api('rows');
+      } catch (err) {
+        if (err.message === 'Password needed.') return; // the password box is showing
+        document.getElementById('login-form').hidden = true;
+        document.getElementById('app').hidden = false;
+        showStatus(`Could not load the data: ${err.message}`, 'error');
+        return;
+      }
+
+      // The password worked (or none is needed): remember it and show the app.
+      savePassword(currentPassword);
+      document.getElementById('login-form').hidden = true;
+      document.getElementById('app').hidden = false;
+
+      if (!table) {
+        columnsMetadata = data.columns;
+        buildGrid(data);
+        buildAddForm(data.columns);
+      }
+      showStatus('', '');
+      runSearch(1);
+    }
+
+    start();
+  </script>
+</body>
+</html>
