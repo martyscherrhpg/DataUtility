@@ -568,7 +568,10 @@
         if (err.message === 'Password needed.') return; // the password box is showing
         document.getElementById('login-form').hidden = true;
         document.getElementById('app').hidden = false;
-        showStatus(`Could not load the data: ${err.message}`, 'error');
+        const message = /login failed for user/i.test(err.message)
+          ? 'Could not connect to the database. The administrator needs to check the Azure SQL credentials.'
+          : `Could not load the data: ${err.message}`;
+        showStatus(message, 'error');
         return;
       }
 
